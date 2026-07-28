@@ -201,6 +201,12 @@ impl MirConst {
         with(|cx| cx.new_const_str(value))
     }
 
+    /// Build a new constant that represents the given string, storing the data
+    /// in an allocation aligned to `align` bytes.
+    pub fn from_bytes_aligned(bytes: &[u8], align: u64) -> MirConst {
+        with(|cx| cx.new_const_bytes_aligned(bytes, align))
+    }
+
     /// Build a new constant that represents the given boolean value.
     pub fn from_bool(value: bool) -> MirConst {
         with(|cx| cx.new_const_bool(value))

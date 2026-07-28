@@ -394,10 +394,20 @@ impl fmt::Debug for Item {
 }
 
 pub(crate) fn rustc_span(def_id: DefId, tcx: TyCtxt<'_>) -> Span {
-    Span::new(def_id.as_local().map_or_else(
-        || tcx.def_span(def_id),
-        |local| tcx.hir_span_with_body(tcx.local_def_id_to_hir_id(local)),
-    ))
+    let def_span = Span::new(tcx.def_span(def_id));
+    match def_id.as_local() {
+        None => def_span,
+        Some(local) => {
+            let hir_span = Span::new(tcx.hir_span_with_body(tcx.local_def_id_to_hir_id(local)));
+            if matches!(def_span.filename(tcx.sess), FileName::Real(_))
+                && def_span.filename(tcx.sess) != hir_span.filename(tcx.sess)
+            {
+                def_span
+            } else {
+                hir_span
+            }
+        }
+    }
 }
 
 fn is_field_vis_inherited(tcx: TyCtxt<'_>, def_id: DefId) -> bool {

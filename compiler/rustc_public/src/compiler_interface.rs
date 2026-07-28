@@ -517,6 +517,31 @@ impl<'tcx> CompilerInterface<'tcx> {
         self.with_cx(|tables, cx| cx.new_const_str(value).stable(tables, cx))
     }
 
+    /// Create a new constant that represents the given string value, storing the
+    /// data in an allocation aligned to `align` bytes.
+    pub(crate) fn new_const_bytes_aligned(&self, bytes: &[u8], align: u64) -> MirConst {
+        self.with_cx(|tables, cx| {
+            use rustc_abi::Align;
+            use rustc_middle::mir::interpret::Allocation as RustcAllocation;
+            use rustc_middle::mir::{Const as RustcConst, ConstValue, Mutability};
+            use rustc_middle::ty::Ty as RustcTy;
+
+            use crate::unstable::Stable;
+
+            let ty: RustcTy = RustcTy::new_static_str(cx.tcx);
+            let alloc = RustcAllocation::from_bytes(
+                bytes.to_vec(),
+                Align::from_bytes(align).unwrap(),
+                Mutability::Not,
+                (),
+            );
+            let alloc_id =
+                cx.tcx.reserve_and_set_memory_alloc(cx.tcx.mk_const_alloc(alloc));
+            let cv = ConstValue::Slice { alloc_id, meta: bytes.len() as u64 };
+            RustcConst::Val(cv, ty).stable(tables, cx)
+        })
+    }
+
     /// Create a new constant that represents the given boolean value.
     pub(crate) fn new_const_bool(&self, value: bool) -> MirConst {
         self.with_cx(|tables, cx| cx.new_const_bool(value).stable(tables, cx))
@@ -898,7 +923,9 @@ impl<'tcx> CompilerInterface<'tcx> {
 }
 
 // A thread local variable that stores a pointer to [`CompilerInterface`].
-scoped_tls::scoped_thread_local!(static TLV: Cell<*const ()>);
+thread_local! {
+    static TLV: Cell<*const ()> = const { Cell::new(std::ptr::null()) };
+}
 
 // remove this cfg when we have a stable driver.
 #[cfg(feature = "rustc_internal")]
@@ -906,12 +933,14 @@ pub(crate) fn run<'tcx, F, T>(interface: &CompilerInterface<'tcx>, f: F) -> Resu
 where
     F: FnOnce() -> T,
 {
-    if TLV.is_set() {
-        Err(Error::from("rustc_public already running"))
-    } else {
-        let ptr: *const () = (&raw const interface) as _;
-        TLV.set(&Cell::new(ptr), || Ok(f()))
-    }
+    // if TLV.is_set() {
+    //     Err(Error::from("rustc_public already running"))
+    // } else {
+    assert!(TLV.get().is_null());
+    let ptr: *const () = (Box::leak(Box::new(interface))) as *const _ as _;
+    TLV.set(ptr);
+    Ok(f())
+    // }
 }
 
 /// Execute the given function with access the [`CompilerInterface`].
@@ -919,12 +948,15 @@ where
 /// I.e., This function will load the current interface and calls a function with it.
 /// Do not nest these, as that will ICE.
 pub(crate) fn with<R>(f: impl for<'tcx> FnOnce(&CompilerInterface<'tcx>) -> R) -> R {
-    assert!(TLV.is_set());
-    TLV.with(|tlv| {
-        let ptr = tlv.get();
-        assert!(!ptr.is_null());
-        f(unsafe { *(ptr as *const &CompilerInterface<'_>) })
-    })
+    let ptr = TLV.get();
+    assert!(!ptr.is_null());
+    f(unsafe { *(ptr as *const &CompilerInterface<'_>) })
+    // assert!(TLV.is_set());
+    // TLV.with(|tlv| {
+    //     let ptr = tlv.get();
+    //     assert!(!ptr.is_null());
+    //     f(unsafe { *(ptr as *const &CompilerInterface<'_>) })
+    // })
 }
 
 fn smir_crate<'tcx>(

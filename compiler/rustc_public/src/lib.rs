@@ -44,7 +44,17 @@
 
 #![allow(rustc::usage_of_ty_tykind)]
 #![doc(test(attr(allow(unused_variables), deny(warnings), allow(internal_features))))]
+#![feature(rustc_private)]
 #![feature(sized_hierarchy)]
+
+extern crate rustc_abi;
+extern crate rustc_crate_store;
+extern crate rustc_hir;
+extern crate rustc_middle;
+extern crate rustc_public_bridge;
+extern crate rustc_session;
+extern crate rustc_span;
+extern crate rustc_target;
 
 use std::fmt::Debug;
 use std::marker::PhantomData;
