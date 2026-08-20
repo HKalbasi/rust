@@ -134,7 +134,12 @@ fn get_doctest_dir(opts: &RustdocOptions) -> io::Result<TempDir> {
     builder.tempdir()
 }
 
-pub(crate) fn run(dcx: DiagCtxtHandle<'_>, input: Input, options: RustdocOptions) {
+pub(crate) fn run(
+    dcx: DiagCtxtHandle<'_>,
+    input: Input,
+    options: RustdocOptions,
+    callbacks: &mut dyn crate::Callbacks,
+) {
     let invalid_codeblock_attributes_name = crate::lint::INVALID_CODEBLOCK_ATTRIBUTES.name;
 
     // See core::create_config for what's going on here.
@@ -181,7 +186,7 @@ pub(crate) fn run(dcx: DiagCtxtHandle<'_>, input: Input, options: RustdocOptions
     let mut cfgs = options.cfgs.clone();
     cfgs.push("doc".to_owned());
     cfgs.push("doctest".to_owned());
-    let config = interface::Config {
+    let mut config = interface::Config {
         opts: sessopts,
         crate_cfg: cfgs,
         crate_check_cfg: options.check_cfgs.clone(),
@@ -199,6 +204,7 @@ pub(crate) fn run(dcx: DiagCtxtHandle<'_>, input: Input, options: RustdocOptions
         ice_file: None,
         using_internal_features: &rustc_driver::USING_INTERNAL_FEATURES,
     };
+    callbacks.config(&mut config);
 
     let externs = options.externs.clone();
     let json_unused_externs = options.json_unused_externs;
@@ -215,10 +221,12 @@ pub(crate) fn run(dcx: DiagCtxtHandle<'_>, input: Input, options: RustdocOptions
     let extract_doctests = options.output_format == OutputFormat::Doctest;
     let save_temps = options.codegen_options.save_temps;
     let result = interface::run_compiler(config, |compiler| {
-        let krate = rustc_interface::passes::parse(&compiler.sess);
+        let mut krate = rustc_interface::passes::parse(&compiler.sess);
+        callbacks.after_crate_root_parsing(compiler, &mut krate);
 
-        let (collector, _incr_comp_session) =
+let (collector, _incr_comp_session) =
             rustc_interface::create_and_enter_global_ctxt(compiler, krate, |tcx| {
+                callbacks.after_expansion(tcx);
                 let crate_name = tcx.crate_name(LOCAL_CRATE).to_string();
                 let opts = scrape_test_config(tcx, crate_name, args_path);
 

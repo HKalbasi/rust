@@ -76,7 +76,7 @@ where
     let compiler_interface =
         CompilerInterface { tables: RefCell::new(Tables::default()), cx: compiler_cx };
 
-    crate::compiler_interface::run(&compiler_interface, || f())
+    crate::compiler_interface::run(Box::leak(Box::new(compiler_interface)), || f())
 }
 
 /// Instantiate and run the compiler with the provided arguments and callback.
